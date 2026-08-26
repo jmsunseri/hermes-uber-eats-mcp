@@ -172,7 +172,71 @@ def extract_menu_items(page) -> list[dict]:
     return []
 
 
-def search_uber_eats(search_term: str, address: str, max_stores: int = 50) -> dict:
+def parse_delivery_minutes(delivery_time: str) -> int:
+    """Extract minutes from a delivery time string like '13 min' or '1:30 PM'."""
+    if not delivery_time:
+        return 9999
+    match = re.search(r"(\d+)\s*min", delivery_time, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return 9999
+
+
+def parse_rating(rating: str) -> float:
+    """Extract numeric rating from a string like '4.4'."""
+    if not rating:
+        return 0.0
+    try:
+        return float(rating)
+    except ValueError:
+        return 0.0
+
+
+def select_stores_by_priority(stores: list, priority: str) -> list:
+    """Select which stores to visit based on priority mode.
+
+    Args:
+        stores: List of store dicts with 'delivery_time', 'rating', etc.
+        priority: One of:
+            - "fast": Sort by delivery time, take top 5 fastest
+            - "quality": Sort by rating (descending), take top 5 highest rated
+            - "balanced": Top 3 by delivery time + top 3 by rating (deduped)
+
+    Returns:
+        Selected list of stores, deduped and ordered.
+    """
+    if priority == "fast":
+        ranked = sorted(stores, key=lambda s: parse_delivery_minutes(s["delivery_time"]))
+        selected = ranked[:5]
+        print(f"Priority: fast → top 5 by delivery time", file=sys.stderr)
+
+    elif priority == "quality":
+        ranked = sorted(stores, key=lambda s: parse_rating(s["rating"]), reverse=True)
+        selected = ranked[:5]
+        print(f"Priority: quality → top 5 by rating", file=sys.stderr)
+
+    elif priority == "balanced":
+        by_time = sorted(stores, key=lambda s: parse_delivery_minutes(s["delivery_time"]))
+        by_rating = sorted(stores, key=lambda s: parse_rating(s["rating"]), reverse=True)
+        top_time = by_time[:3]
+        top_rating = by_rating[:3]
+        # Merge, dedupe by name (keep first occurrence = highest ranked in its sort)
+        seen = set()
+        selected = []
+        for store in top_time + top_rating:
+            if store["name"] not in seen:
+                seen.add(store["name"])
+                selected.append(store)
+        print(f"Priority: balanced → top 3 by delivery + top 3 by rating ({len(selected)} unique)", file=sys.stderr)
+
+    else:
+        selected = stores
+        print(f"Priority: none → all {len(stores)} stores", file=sys.stderr)
+
+    return selected
+
+
+def search_uber_eats(search_term: str, address: str, max_stores: int = 50, priority: str = "balanced") -> dict:
     """
     Main function: search Uber Eats for a food term, visit each store,
     and return a combined JSON with all menu items.
@@ -295,10 +359,15 @@ def search_uber_eats(search_term: str, address: str, max_stores: int = 50) -> di
             action_url = store_obj.get("actionUrl", "")
             full_url = f"https://www.ubereats.com{action_url}" if action_url else ""
 
+            # Rating: can be in store.rating object or in meta with badgeType RATINGS
             rating = ""
-            for meta in store_obj.get("meta", []):
-                if meta.get("badgeType") == "RATING":
-                    rating = meta.get("text", "")
+            rating_obj = store_obj.get("rating", {})
+            if isinstance(rating_obj, dict) and rating_obj.get("text"):
+                rating = rating_obj.get("text", "")
+            if not rating:
+                for meta in store_obj.get("meta", []):
+                    if meta.get("badgeType") in ("RATING", "RATINGS"):
+                        rating = meta.get("text", "")
 
             stores.append({
                 "name": name,
@@ -311,13 +380,19 @@ def search_uber_eats(search_term: str, address: str, max_stores: int = 50) -> di
         result["stores"] = stores
         print(f"Found {len(stores)} stores", file=sys.stderr)
 
-        # Step 2: Visit each store page and extract menu items
+        # Step 2: Select which stores to visit based on priority
+        selected = select_stores_by_priority(stores, priority)
+        # Respect max_stores as an upper bound
+        selected = selected[:max_stores]
+        print(f"Visiting {len(selected)} stores...", file=sys.stderr)
+
+        # Step 3: Visit each selected store page and extract menu items
         all_items = []
-        for i, store in enumerate(stores[:max_stores]):
+        for i, store in enumerate(selected):
             if not store["url"]:
                 continue
 
-            print(f"  [{i+1}/{min(len(stores), max_stores)}] {store['name']}", file=sys.stderr)
+            print(f"  [{i+1}/{len(selected)}] {store['name']} ({store.get('rating', '?')}★, {store['delivery_time']})", file=sys.stderr)
 
             try:
                 page.goto(store["url"], timeout=45000)
@@ -373,6 +448,11 @@ if __name__ == "__main__":
                         help="Output JSON file (default: /tmp/uber_eats_<search>.json)")
     parser.add_argument("--max-stores", "-m", type=int, default=None,
                         help="Max stores to visit (default: from config)")
+    parser.add_argument("--priority", "-p", choices=["fast", "quality", "balanced", "none"],
+                        default="balanced",
+                        help="Store selection priority: 'fast' (top 5 by delivery time), "
+                             "'quality' (top 5 by rating), 'balanced' (top 3 by delivery + top 3 by rating), "
+                             "'none' (all stores). Default: balanced")
     args = parser.parse_args()
 
     # Fall back to config for address, output, and max_stores
@@ -383,7 +463,7 @@ if __name__ == "__main__":
         f"uber_eats_{args.search_term.replace(' ', '_')}.json"
     )
 
-    result = search_uber_eats(args.search_term, address, max_stores)
+    result = search_uber_eats(args.search_term, address, max_stores, priority=args.priority)
 
     with open(output, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)

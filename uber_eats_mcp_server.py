@@ -127,9 +127,19 @@ SEARCH_TOOL_DESC = """Search Uber Eats for a food item and collect all menu item
 
 This launches a headless anti-detection browser, searches Uber Eats, visits each restaurant's menu page, and extracts all items with prices. Grocery stores, convenience stores, and markets are automatically excluded.
 
-TAKES 5-10 MINUTES (10-15 seconds per restaurant). Use this FIRST, then pass the JSON output to uber_eats_format.
+Store selection by priority reduces search time from 5-10 minutes to 1-2 minutes:
+- 'fast': Top 5 fastest delivery times (~1 min)
+- 'quality': Top 5 highest rated restaurants (~1 min)
+- 'balanced': Top 3 by delivery time + top 3 by rating, deduped (~1-2 min) — DEFAULT
+- 'none': Visit all matching stores (~5-10 min)
 
-IMPORTANT: If 0 stores are found, the search term likely didn't match. Try:
+BEFORE calling this tool, determine the user's urgency:
+- If the user says they're in a hurry, rushing, or want food fast → priority='fast'
+- If the user says they want good food, best quality, or don't care about time → priority='quality'
+- If the user doesn't specify, or says they don't care → priority='balanced' (default)
+- Only use priority='none' if the user explicitly wants comprehensive results
+
+If 0 stores are found, the search term likely didn't match. Try:
 - The local language name (e.g., Chinese for Taipei: use '宮保雞丁' not 'kung pao chicken')
 - A broader category (e.g., 'Chinese' instead of a specific dish)
 - A different spelling or transliteration
@@ -171,6 +181,11 @@ async def list_tools(ctx, request: types.ListToolsRequest) -> types.ListToolsRes
                         "max_stores": {
                             "type": "integer",
                             "description": "Max restaurant pages to visit. Each takes 10-15 seconds. Default from config (30).",
+                        },
+                        "priority": {
+                            "type": "string",
+                            "enum": ["fast", "quality", "balanced", "none"],
+                            "description": "Store selection priority. 'fast' = top 5 by delivery time. 'quality' = top 5 by rating. 'balanced' = top 3 by delivery + top 3 by rating (default). 'none' = all stores. Determine from user urgency before calling.",
                         },
                     },
                     "required": ["search_term"],
@@ -260,8 +275,9 @@ def _do_search(arguments: dict) -> list[types.TextContent]:
     search_term = arguments.get("search_term", "")
     address = arguments.get("address") or config.get("default_address", "Taipei 101")
     max_stores = arguments.get("max_stores") or config.get("max_stores", 30)
+    priority = arguments.get("priority", "balanced")
 
-    result = search_uber_eats(search_term, address, max_stores)
+    result = search_uber_eats(search_term, address, max_stores, priority=priority)
 
     store_count = len(result.get("stores", []))
     item_count = len(result.get("items", []))
