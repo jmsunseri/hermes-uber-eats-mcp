@@ -1,0 +1,7 @@
+{
+  "default_address": "Mandarin Oriental Taipei",
+  "city_url": "https://www.ubereats.com/tw-en/city/taipei-tpe",
+  "locale": "tw-en",
+  "max_stores": 30,
+  "output_dir": "/tmp"
+}
