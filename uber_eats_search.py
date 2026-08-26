@@ -335,7 +335,10 @@ def search_uber_eats(search_term: str, address: str, max_stores: int = 50) -> di
                     item["store_name"] = store["name"]
                     item["store_url"] = store["url"]
                     item["delivery_time"] = store["delivery_time"]
-                    item["has_bogo"] = store["has_bogo"]
+                    # BOGO items are in the "Offers" section of the menu.
+                    # Only mark items in that section as BOGO, not every item
+                    # from a store that has a BOGO badge.
+                    item["has_bogo"] = store["has_bogo"] and item.get("section", "") == "Offers"
                     all_items.append(item)
 
                 print(f"    → {len(items)} items", file=sys.stderr)
