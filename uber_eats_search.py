@@ -193,47 +193,44 @@ def parse_rating(rating: str) -> float:
 
 
 def select_stores_by_priority(stores: list, priority: str) -> list:
-    """Select which stores to visit based on priority mode.
+    """Sort stores for visiting order. All stores are still visited —
+    priority only affects the order, not the selection.
 
     Args:
         stores: List of store dicts with 'delivery_time', 'rating', etc.
-        priority: One of:
-            - "fast": Sort by delivery time, take top 5 fastest
-            - "quality": Sort by rating (descending), take top 5 highest rated
-            - "balanced": Top 3 by delivery time + top 3 by rating (deduped)
+        priority: One of 'fast', 'quality', 'balanced', 'none'.
 
     Returns:
-        Selected list of stores, deduped and ordered.
+        All stores, reordered by priority.
     """
     if priority == "fast":
         ranked = sorted(stores, key=lambda s: parse_delivery_minutes(s["delivery_time"]))
-        selected = ranked[:5]
-        print(f"Priority: fast → top 5 by delivery time", file=sys.stderr)
+        print(f"Priority: fast → visiting fastest stores first", file=sys.stderr)
 
     elif priority == "quality":
         ranked = sorted(stores, key=lambda s: parse_rating(s["rating"]), reverse=True)
-        selected = ranked[:5]
-        print(f"Priority: quality → top 5 by rating", file=sys.stderr)
+        print(f"Priority: quality → visiting highest-rated stores first", file=sys.stderr)
 
     elif priority == "balanced":
+        # Interleave: alternate between fast and highly-rated
         by_time = sorted(stores, key=lambda s: parse_delivery_minutes(s["delivery_time"]))
         by_rating = sorted(stores, key=lambda s: parse_rating(s["rating"]), reverse=True)
-        top_time = by_time[:3]
-        top_rating = by_rating[:3]
-        # Merge, dedupe by name (keep first occurrence = highest ranked in its sort)
         seen = set()
-        selected = []
-        for store in top_time + top_rating:
-            if store["name"] not in seen:
-                seen.add(store["name"])
-                selected.append(store)
-        print(f"Priority: balanced → top 3 by delivery + top 3 by rating ({len(selected)} unique)", file=sys.stderr)
+        ranked = []
+        for i in range(max(len(by_time), len(by_rating))):
+            if i < len(by_time) and by_time[i]["name"] not in seen:
+                seen.add(by_time[i]["name"])
+                ranked.append(by_time[i])
+            if i < len(by_rating) and by_rating[i]["name"] not in seen:
+                seen.add(by_rating[i]["name"])
+                ranked.append(by_rating[i])
+        print(f"Priority: balanced → interleaving fast + rated", file=sys.stderr)
 
     else:
-        selected = stores
-        print(f"Priority: none → all {len(stores)} stores", file=sys.stderr)
+        ranked = stores
+        print(f"Priority: none → visiting in API order", file=sys.stderr)
 
-    return selected
+    return ranked
 
 
 def search_uber_eats(search_term: str, address: str, max_stores: int = 50, priority: str = "balanced") -> dict:
