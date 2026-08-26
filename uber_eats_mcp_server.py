@@ -127,18 +127,17 @@ SEARCH_TOOL_DESC = """Search Uber Eats for a food item and collect all menu item
 
 This launches a headless anti-detection browser, searches Uber Eats, visits each restaurant's menu page, and extracts all items with prices. Grocery stores, convenience stores, and markets are automatically excluded.
 
-All matching stores are visited — priority only controls the ORDER:
-- 'fast': Visit fastest-delivering stores first (results sorted by delivery time)
-- 'quality': Visit highest-rated stores first (results sorted by rating)
-- 'balanced': Interleave fast + highly-rated stores (default)
-- 'none': Visit in API order
-
-Takes 5-10 minutes (10-15 seconds per restaurant). Use this FIRST, then pass the JSON output to uber_eats_format.
+Store selection by priority reduces search time from 5-10 minutes to 1-2 minutes:
+- 'fast': Top 5 fastest delivery times (~1-2 min)
+- 'quality': Top 5 highest rated restaurants (~1-2 min)
+- 'balanced': Top 3 by delivery time + top 3 by rating, deduped (~1-2 min) — DEFAULT
+- 'none': Visit all matching stores (~5-10 min)
 
 BEFORE calling this tool, determine the user's urgency:
 - If the user says they're in a hurry, rushing, or want food fast → priority='fast'
 - If the user says they want good food, best quality, or don't care about time → priority='quality'
 - If the user doesn't specify, or says they don't care → priority='balanced' (default)
+- Only use priority='none' if the user explicitly wants comprehensive results
 
 If 0 stores are found, the search term likely didn't match. Try:
 - The local language name (e.g., Chinese for Taipei: use '宮保雞丁' not 'kung pao chicken')
