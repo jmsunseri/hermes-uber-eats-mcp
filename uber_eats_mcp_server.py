@@ -253,7 +253,8 @@ async def call_tool_handler(ctx, params: types.CallToolRequestParams) -> types.C
     arguments = params.arguments or {}
 
     if name == "uber_eats_search":
-        content = _do_search(arguments)
+        import asyncio as _asyncio
+        content = await _asyncio.to_thread(_do_search, arguments)
         return types.CallToolResult(content=content)
     elif name == "uber_eats_format":
         content = _do_format(arguments)
